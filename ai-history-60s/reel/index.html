@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head><body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+/* ============================================================
+   《AI 发展历程》— 60s 纯代码讲解动画
+   设计语言（沿用已验证的 ai-history-v2）：纯黑底 + 白色发光线条/文字
+   + 琥珀橙点缀；顶部小字标题 → 中央发光可视化 → 底部一句话字幕；
+   招牌转场：巨型年份数字"穿越"
+   时间轴：8 节拍 × 7.5s = 60s，每节拍 = 1.5s 年份穿越 + 6s 场景
+   ============================================================ */
+const W=1280,H=720;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+const AMBER='#f5a623',WHITE='#ffffff';
+const SANS='"Noto Sans CJK SC","PingFang SC",sans-serif';
+const SERIF='"Noto Serif CJK SC",serif';
+const MONO='ui-monospace,"SF Mono",Menlo,monospace';
+
+function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const eio=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+const eo=t=>1-Math.pow(1-t,3);
+const fade=(t,a,b)=>clamp((t-a)/(b-a),0,1);
+
+function glow(color,blur){x.shadowColor=color;x.shadowBlur=blur;}
+function noglow(){x.shadowBlur=0;}
+
+function text(str,px,py,font,color,align='center',spacing=0,alpha=1,weight=''){
+  x.save();x.globalAlpha=alpha;x.font=`${weight} ${font}`;
+  try{x.letterSpacing=spacing+'px';}catch(e){}
+  x.fillStyle=color;x.textAlign=align;x.textBaseline='middle';
+  glow(color,spacing>8?26:14);x.fillText(str,px,py);x.restore();
+}
+function topLabel(str,a){
+  text(str,W/2,118,`22px ${MONO}`,`rgba(190,212,240,${a})`,'center',12,1);
+}
+function subtitle(str,a){
+  text(str,W/2,H-92,`30px ${SANS}`,'#ffffff','center',6,a);
+}
+function hline(x1,x2,y,color,width,alpha){
+  x.save();x.globalAlpha=alpha;x.strokeStyle=color;x.lineWidth=width;
+  glow(color,12);x.beginPath();x.moveTo(x1,y);x.lineTo(x2,y);x.stroke();x.restore();
+}
+function ctxMeasure(s,fs){x.save();x.font=fs||`26px ${SANS}`;const w=x.measureText(s).width;x.restore();return w;}
+function roundRect(a,b,w,h,r){x.beginPath();x.moveTo(a+r,b);x.arcTo(a+w,b,a+w,b+h,r);
+  x.arcTo(a+w,b+h,a,b+h,r);x.arcTo(a,b+h,a,b,r);x.arcTo(a,b,a+w,b,r);x.closePath();}
+
+/* ================= 招牌转场：年份穿越 ================= */
+function warp(p,year,px){
+  px=px||190;
+  x.fillStyle='#000';x.fillRect(0,0,W,H);
+  const cx=W/2,cy=H/2,R=mulberry(7);
+  x.save();x.lineCap='round';
+  for(let i=0;i<170;i++){
+    const ang=R()*Math.PI*2, r0=60+R()*160+p*560, len=26+p*300;
+    const al=(0.10+0.55*p)*(1-R()*0.5);
+    x.strokeStyle=`rgba(255,255,255,${al.toFixed(3)})`;
+    x.lineWidth=1+R()*1.6;noglow();
+    x.beginPath();
+    x.moveTo(cx+Math.cos(ang)*r0,cy+Math.sin(ang)*r0);
+    x.lineTo(cx+Math.cos(ang)*(r0+len),cy+Math.sin(ang)*(r0+len));x.stroke();
+  }
+  x.restore();
+  const s=0.28+Math.pow(p,1.7)*3.4, a=p<0.62?1:Math.max(0,1-(p-0.62)/0.38);
+  const stretch=1+p*p*1.4;
+  x.save();x.translate(cx,cy);x.scale(s*stretch,s);
+  text(year,0,0,`900 ${px}px ${SANS}`,'#ffffff','center',6,a);x.restore();
+  const fl=Math.sin(Math.PI*clamp((p-0.55)/0.45,0,1));
+  if(fl>0.01){x.fillStyle=`rgba(255,255,255,${(fl*0.9).toFixed(3)})`;x.fillRect(0,0,W,H);}
+}
+
+/* ================= B1: 1950 图灵之问 ================= */
+function sceneTuring(lt){
+  x.fillStyle='#000';x.fillRect(0,0,W,H);
+  const out=fade(lt,5.2,6);
+  const R=mulberry(77);
+  x.save();noglow();
+  for(let c=0;c<26;c++){
+    const bx=40+c*48, sp=40+R()*60, off=R()*H;
+    for(let r=0;r<8;r++){
+      const by=((off+lt*sp+r*110)%(H+160))-80;
+      x.fillStyle=`rgba(140,170,220,${(0.07*(1-out)).toFixed(3)})`;
+      x.font=`18px ${MONO}`;x.fillText(R()>0.5?'1':'0',bx,by);
+    }
+  }
+  x.restore();
+  const a=fade(lt,0.4,1.4)*(1-out), s=0.85+0.15*eo(fade(lt,0.4,1.6));
+  x.save();x.translate(W/2,H/2-50);x.scale(s,s);
+  text('?',0,0,`900 330px ${SANS}`,'#ffffff','center',0,a);
+  x.restore();
+  const cells=['1','0','1','1','0','0','1','0','1','1','0','1','0','0'];
+  const cw=64, off2=(lt*36)%cw, y0=H/2+168;
+  x.save();x.globalAlpha=(1-out);
+  hline(W/2-7*cw-20,W/2+7*cw+20,y0-26,'rgba(255,255,255,0.25)',1,1);
+  hline(W/2-7*cw-20,W/2+7*cw+20,y0+26,'rgba(255,255,255,0.25)',1,1);
+  for(let i=-7;i<7;i++){
+    const bx=W/2+i*cw-off2+cw/2;
+    const sym=cells[((i%14)+14)%14];
+    const hot=i===0;
+    text(sym,bx,y0,`24px ${MONO}`,hot?AMBER:'rgba(255,255,255,0.75)','center',0,1);
+    if(hot){x.strokeStyle=AMBER;glow(AMBER,14);x.lineWidth=2;
+      x.strokeRect(bx-cw/2+4,y0-26,cw-8,52);}
+  }
+  x.restore();
+  topLabel('1950 · TURING · 图灵之问',fade(lt,0.2,0.9)*(1-out));
+  subtitle('“机器，会思考吗？”',fade(lt,1.0,1.8)*(1-out));
+}
+
+/* ================= B2: 1956 达特茅斯 ================= */
+function sceneDartmouth(lt){
+  x.fillStyle='#000';x.fillRect(0,0,W,H);
+  const out=fade(lt,5.2,6);
+  const N=10,R=mulberry(31),cx=W/2,cy=H/2-60;
+  const pts=[];
+  for(let i=0;i<N;i++){
+    const ang=i/N*Math.PI*2-Math.PI/2;
+    const sx=R()*W,sy=R()*H;
+    const ex2=cx+Math.cos(ang)*180, ey2=cy+Math.sin(ang)*180;
+    const q=eo(fade(lt,0.2+i*0.06,1.4+i*0.06));
+    pts.push({x:lerp(sx,ex2,q),y:lerp(sy,ey2,q),a:fade(lt,0.2+i*0.06,0.9+i*0.06)});
+  }
+  x.save();
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+    const al=Math.min(pts[i].a,pts[j].a)*0.22*(1-out);
+    if(al<=0)continue;
+    x.strokeStyle=`rgba(170,205,255,${al.toFixed(3)})`;x.lineWidth=1;noglow();
+    x.beginPath();x.moveTo(pts[i].x,pts[i].y);x.lineTo(pts[j].x,pts[j].y);x.stroke();
+  }
+  pts.forEach(p=>{
+    x.fillStyle=`rgba(255,255,255,${(p.a*(1-out)).toFixed(3)})`;glow('#fff',12);
+    x.beginPath();x.arc(p.x,p.y,5,0,7);x.fill();
+  });
+  x.restore();
+  const full='ARTIFICIAL INTELLIGENCE';
+  const nch=Math.floor(fade(lt,1.2,2.7)*full.length);
+  if(nch>0)text(full.slice(0,nch),cx,cy+150,`600 34px ${MONO}`,'#fff','center',10,1-out);
+  if(nch>=full.length&&((lt*2.5)|0)%2!==0){
+    x.fillStyle='#fff';x.fillRect(cx+ctxMeasure(full,`600 34px ${MONO}`)/2+14,cy+150-14,4,28);}
+  const a2=fade(lt,2.2,2.8)*(1-out);
+  if(a2>0){
+    text('人工智能',cx,cy+208,`40px ${SANS}`,'#fff','center',18,a2);
+    hline(cx-150,cx+150,cy+252,AMBER,2,a2);
+  }
+  topLabel('1956 · DARTMOUTH · 达特茅斯会议',fade(lt,0.2,0.9)*(1-out));
+  subtitle('“人工智能”正式命名',fade(lt,0.9,1.7)*(1-out));
+}
+
+/* ================= B3: 1974·1987 两次寒冬（Opus 5.5 编写，已修 fade 方向） ================= */
+function sceneWinter(lt){
+  const fadeOut=1-fade(lt,5.2,6);
+  x.fillStyle='#000';x.fillRect(0,0,W,H);
+  if(lt<2.8){
+    const alpha1=fade(lt,0,0.5)*fade(2.8-lt,0,0.3)*fadeOut;
+    for(let i=0;i<80;i++){
+      const rng=mulberry(1000+i);
+      const sx=(rng()*W+lt*(50+rng()*30))%W;
+      const sy=(rng()*H+lt*(80+rng()*40))%H;
+      const size=2+rng()*2;
+      x.fillStyle=`rgba(150,180,225,${((0.3+rng()*0.4)*alpha1).toFixed(3)})`;noglow();
+      x.fillRect(sx,sy,size,size);
+    }
+  }
+  if(lt>2.7&&lt<5.3){
+    const alpha2=fade(lt,2.7,3.2)*fade(5.3-lt,0,0.3)*fadeOut;
+    for(let i=0;i<50;i++){
+      const rng=mulberry(2000+i);
+      const sx=(rng()*W+lt*(40+rng()*25))%W;
+      const sy=(rng()*H+lt*(70+rng()*35))%H;
+      const size=2+rng()*2.5;
+      x.fillStyle=`rgba(150,180,225,${((0.25+rng()*0.35)*alpha2).toFixed(3)})`;noglow();
+      x.fillRect(sx,sy,size,size);
+    }
+  }
+  const fx=W/2, fy=H/2+40;
+  const flicker=0.7+Math.sin(lt*4.3)*0.15+Math.sin(lt*7.1)*0.1;
+  const glowAlpha=flicker*fadeOut;
+  glow(AMBER,40);
+  const layers=[[35,50,5.2,6.8,0,0.5],[28,42,6.5,8.2,-8,0.7],[20,32,7.8,9.5,-15,0.85],[12,22,9.2,11.3,-20,1]];
+  layers.forEach(L=>{
+    const shx=Math.sin(lt*L[2])*3, shy=Math.sin(lt*L[3])*4;
+    x.globalAlpha=L[5]*glowAlpha;
+    x.fillStyle=AMBER;
+    x.beginPath();x.ellipse(fx+shx,fy+shy+L[4],L[0],L[1],0,0,Math.PI*2);x.fill();
+  });
+  noglow();x.globalAlpha=1;
+  topLabel('1974·1987 · WINTER · 两次寒冬',fade(lt,0.2,0.9)*fadeOut);
+  subtitle('梦想沉寂，薪火不灭',fade(lt,0.9,1.7)*fadeOut);
+}
+
+/* ================= B4: 1997 深蓝 ================= */
+function sceneChess(lt){
+  x.fillStyle='#000';x.fillRect(0,0,W,H);
+  const out=fade(lt,5.2,6);
+  const drift=Math.sin(lt*0.8)*14;
+  const y0=H*0.47, y1=H*0.97, cx=W/2+drift;
+  const Xb=t=>cx+(t-0.5)*760, Xt=t=>cx+(t-0.5)*300;
+  const Yy=k=>{const q=Math.pow(k/8,1.65);return lerp(y0,y1,q);};
+  x.save();x.globalAlpha=1-out;
+  for(let k=0;k<=8;k++){
+    const y=Yy(k),a=fade(lt,0.2+k*0.06,0.8+k*0.06);
+    x.strokeStyle=`rgba(255,255,255,${(0.5*a).toFixed(3)})`;x.lineWidth=k%2?1:1.6;
+    glow('#fff',k===8?16:8);x.beginPath();x.moveTo(Xb(0)+(Xt(0)-Xb(0))*(k/8),y);
+    x.lineTo(Xb(1)+(Xt(1)-Xb(1))*(k/8),y);x.stroke();
+  }
+  for(let i=0;i<=8;i++){
+    const t=i/8,a=fade(lt,0.3,0.9);
+    x.strokeStyle=`rgba(255,255,255,${(0.42*a).toFixed(3)})`;x.lineWidth=1;noglow();
+    x.beginPath();x.moveTo(lerp(Xb(t),Xt(t),0),y0);x.lineTo(lerp(Xb(t),Xt(t),1),y1);x.stroke();
+  }
+  x.restore();
+  const qx=i=>{const t=(i+0.5)/8;return {x0:lerp(Xb(i/8),Xt(i/8),0.55),x1:lerp(Xb((i+1)/8),Xt((i+1)/8),0.55),
+    y0:Yy(4.4),y1:Yy(5.4)};};
+  const s=qx(4), pulse=0.5+0.5*Math.sin(lt*4), a=fade(lt,0.8,1.5)*(1-out);
+  x.save();x.globalAlpha=a;
+  x.fillStyle=`rgba(245,166,35,${(0.22+0.16*pulse).toFixed(3)})`;glow(AMBER,24);
+  x.beginPath();x.moveTo(s.x0,s.y0);x.lineTo(s.x1,s.y0);x.lineTo(s.x1,s.y1);x.lineTo(s.x0,s.y1);x.closePath();x.fill();
+  const px=(s.x0+s.x1)/2, py=(s.y0+s.y1)/2;
+  x.strokeStyle='rgba(245,166,35,0.9)';x.lineWidth=2.5;glow(AMBER,18);
+  x.beginPath();x.arc(px,py-26,16+4*pulse,0,7);x.stroke();
+  x.fillStyle='#fff';glow('#fff',12);x.beginPath();x.arc(px,py-26,4,0,7);x.fill();
+  x.restore();
+  topLabel('1997 · DEEP BLUE · 深蓝',fade(lt,0.2,0.9)*(1-out));
+  subtitle('战胜国际象棋世界冠军',fade(lt,0.9,1.7)*(1-out));
+}
+
+/* ================= B5: 2012 AlexNet ================= */
+function sceneCNN(lt){
+  x.fillStyle='#000';x.fillRect(0,0,W,H);
+  const out=fade(lt,5.2,6);
+  const layers=[{n:7,s:1},{n:5,s:0.72},{n:4,s:0.5}];
+  const cx=W/2, cyy=H/2-40;
+  const ex=[46,23],ey=[-46,23];
+  layers.forEach((L,li)=>{
+    const a=fade(lt,0.2+li*0.3,0.8+li*0.3)*(1-out);
+    if(a<=0)return;
+    const oy=cyy+(li-1)*120, sc=L.s;
+    x.save();x.globalAlpha=a;
+    for(let i=0;i<=L.n;i++){
+      for(const [p0,p1] of [[[0,i],[L.n,i]],[[i,0],[i,L.n]]]){
+        const X=(g,k)=>cx+((g-L.n/2)*ex[0]+(k-L.n/2)*ey[0])*sc;
+        const Y=(g,k)=>oy+((g-L.n/2)*ex[1]+(k-L.n/2)*ey[1])*sc;
+        const scan=((lt*2.0+li*1.3)%(L.n+1.5))-0.5;
+        const isVert=p0[0]===p1[0];
+        const hot=isVert&&Math.abs(p0[0]-scan)<0.9;
+        x.strokeStyle=hot?'rgba(245,166,35,0.9)':'rgba(255,255,255,0.34)';
+        x.lineWidth=hot?2:1;hot?glow(AMBER,12):noglow();
+        x.beginPath();x.moveTo(X(p0[0],p0[1]),Y(p0[0],p0[1]));x.lineTo(X(p1[0],p1[1]),Y(p1[0],p1[1]));x.stroke();
+      }
+    }
+    x.restore();
+    if(li<2){
+      const q=((lt*0.8+li*0.33)%1);
+      x.save();x.fillStyle=AMBER;glow(AMBER,18);x.globalAlpha=a;
+      x.beginPath();x.arc(cx+(q-0.5)*40,oy+66,7,0,7);x.fill();x.restore();
+      x.save();noglow();x.strokeStyle=`rgba(245,166,35,${(0.35*a).toFixed(3)})`;x.lineWidth=1.5;
+      x.beginPath();x.moveTo(cx-14,oy+66);x.lineTo(cx-14,oy+114);x.stroke();
+      x.beginPath();x.moveTo(cx+14,oy+66);x.lineTo(cx+14,oy+114);x.stroke();x.restore();
+    }
+    text('LAYER '+(li+1),cx+270,oy,`15px ${MONO}`,'rgba(160,190,230,0.5)','left',6,a*(1-out));
+  });
+  topLabel('2012 · ALEXNET · 深度学习',fade(lt,0.2,0.9)*(1-out));
+  subtitle('深度学习点燃新时代',fade(lt,1.0,1.8)*(1-out));
+}
+
+/* ================= B6: 2016 AlphaGo（Opus 5.5 编写，已修 fade 方向） ================= */
+function sceneGo(lt){
+  const fadeOut=1-fade(lt,5.2,6);
+  x.fillStyle='#000';x.fillRect(0,0,W,H);
+  topLabel('2016 · ALPHAGO · 围棋',fade(lt,0.2,0.9)*fadeOut);
+  const boardSize=13, cellSize=32;
+  const boardW=cellSize*(boardSize-1);
+  const boardX=W*0.35, boardY=H*0.5;
+  const startX=boardX-boardW/2, startY=boardY-boardW/2;
+  for(let i=0;i<boardSize;i++){
+    const lp=clamp((lt-0.2-i*0.077)/0.077,0,1);
+    const la=lp*fadeOut;
+    if(la>0){
+      hline(startX,startX+boardW,startY+i*cellSize,'#fff',1,la*0.4);
+      x.save();x.globalAlpha=la*0.4;x.strokeStyle='#fff';x.lineWidth=1;noglow();
+      x.beginPath();x.moveTo(startX+i*cellSize,startY);x.lineTo(startX+i*cellSize,startY+boardW);x.stroke();
+      x.restore();
+    }
+  }
+  const rng=mulberry(2016), positions=[], stones=[];
+  for(let i=0;i<15;i++){
+    let px,py,att=0;
+    do{px=Math.floor(rng()*boardSize);py=Math.floor(rng()*boardSize);att++;}
+    while(att<50&&positions.some(p=>p.x===px&&p.y===py));
+    positions.push({x:px,y:py});
+    stones.push({x:px,y:py,amber:i===14,time:i===14?3.5:1.0+i*0.18,black:i%2===0});
+  }
+  stones.forEach(st=>{
+    const sp=clamp((lt-st.time)/0.25,0,1);
+    if(sp<=0)return;
+    const r=cellSize*0.4*eo(sp), sx=startX+st.x*cellSize, sy=startY+st.y*cellSize;
+    x.save();
+    if(st.amber){
+      const rt=lt-st.time;
+      for(let ring=0;ring<2;ring++){
+        const rp=(rt-ring*0.75)/1.5;
+        if(rp>0&&rp<1){
+          x.globalAlpha=(1-rp)*0.6*fadeOut;x.strokeStyle=AMBER;x.lineWidth=2;noglow();
+          x.beginPath();x.arc(sx,sy,r+rp*40,0,Math.PI*2);x.stroke();
+        }
+      }
+      glow(AMBER,20);x.globalAlpha=fadeOut;x.fillStyle=AMBER;
+      x.beginPath();x.arc(sx,sy,r,0,Math.PI*2);x.fill();noglow();
+    }else if(st.black){
+      glow('rgba(150,180,225,0.3)',6);x.globalAlpha=fadeOut;x.fillStyle='#333';
+      x.beginPath();x.arc(sx,sy,r,0,Math.PI*2);x.fill();noglow();
+    }else{
+      glow('#fff',12);x.globalAlpha=fadeOut;x.fillStyle='#fff';
+      x.beginPath();x.arc(sx,sy,r,0,Math.PI*2);x.fill();noglow();
+    }
+    x.restore();
+  });
+  const ma=fade(lt,3.7,4.4)*fadeOut;
+  if(ma>0)text('MOVE 37',W*0.72,H*0.5,`600 32px ${MONO}`,AMBER,'center',2,ma);
+  subtitle('战胜围棋世界冠军李世石',fade(lt,0.9,1.7)*fadeOut);
+}
+
+/* ================= B7: 2022 ChatGPT ================= */
+function sceneChat(lt){
+  x.fillStyle='#000';x.fillRect(0,0,W,H);
+  const out=fade(lt,5.2,6);
+  const msgs=[
+    {t:'帮我写一封家书',me:true,y:236,at:0.3},
+    {t:'好的，已写好，情真意切',me:false,y:340,at:1.15},
+    {t:'再翻译成英文吧',me:true,y:444,at:1.9},
+  ];
+  msgs.forEach(m=>{
+    const pop=eo(fade(lt,m.at,m.at+0.5));
+    if(pop<=0)return;
+    const wpx=ctxMeasure(m.t)+56;
+    const bx2=m.me?W-140-wpx:W/2-500;
+    x.save();x.translate(bx2+wpx/2,m.y);x.scale(pop,pop);x.translate(-(bx2+wpx/2),-m.y);
+    x.strokeStyle=m.me?'rgba(255,255,255,0.85)':AMBER;x.lineWidth=2;glow(m.me?'#fff':AMBER,14);
+    roundRect(bx2,m.y-30,wpx,60,18);x.stroke();
+    x.fillStyle=m.me?'rgba(255,255,255,0.03)':`rgba(245,166,35,${(0.05*(1-out)).toFixed(3)})`;
+    noglow();roundRect(bx2,m.y-30,wpx,60,18);x.fill();
+    const nch=Math.floor(fade(lt,m.at+0.35,m.at+0.35+m.t.length*0.055)*m.t.length);
+    x.fillStyle='#fff';noglow();x.font=`26px ${SANS}`;x.textAlign='left';x.textBaseline='middle';
+    try{x.letterSpacing='2px';}catch(e){}
+    x.fillText(m.t.slice(0,nch),bx2+28,m.y+1);
+    if(nch<m.t.length&&((lt*2.4)|0)%2===0){x.fillRect(bx2+28+ctxMeasure(m.t.slice(0,nch))+4,m.y-12,3,24);}
+    x.restore();
+  });
+  const tk=fade(lt,2.0,3.6);
+  if(tk>0){x.save();noglow();
+    for(let i=0;i<10;i++){
+      const wseg=34, sx=W/2-500+i*(wseg+8), ww=wseg*clamp((tk*10-i),0,1);
+      x.fillStyle=i<7?`rgba(255,255,255,${(0.5*tk*(1-out)).toFixed(3)})`:`rgba(245,166,35,${(0.8*tk*(1-out)).toFixed(3)})`;
+      x.fillRect(sx,516,Math.max(0,ww),8);
+    }
+    text('TOKEN',W/2-500+10*42+40,520,`15px ${MONO}`,'rgba(160,190,230,0.55)','left',8,tk*(1-out));
+    x.restore();
+  }
+  if(lt>5.1){
+    const R=mulberry(5),p=(lt-5.1)/0.9;
+    x.save();
+    for(let i=0;i<90;i++){
+      const sx=R()*W,sy=200+R()*300;
+      x.fillStyle=`rgba(255,255,255,${((1-p)*0.5).toFixed(3)})`;noglow();
+      x.fillRect(sx,sy-p*(60+R()*120),2,2);
+    }
+    x.restore();
+  }
+  topLabel('2022 · CHATGPT · 对话',fade(lt,0.2,0.9)*(1-out));
+  text('2017 · TRANSFORMER 奠基',W/2,H-140,`17px ${MONO}`,'rgba(245,166,35,0.72)','center',8,fade(lt,2.6,3.4)*(1-out));
+  subtitle('上线两月用户破亿，AI 走进千家万户',fade(lt,1.2,2.0)*(1-fade(lt,4.9,5.7)));
+}
+
+/* ================= B8: 今天 · AI 赋能教育 ================= */
+function sceneToday(lt){
+  x.fillStyle='#000';x.fillRect(0,0,W,H);
+  const a0=fade(lt,0.5,1.3);
+  text('TODAY · 今天',W/2,150,`20px ${MONO}`,'rgba(190,212,240,0.75)','center',14,a0);
+  const a1=fade(lt,0.9,2.1);
+  x.save();x.translate(W/2,300);x.translate(0,(1-eo(fade(lt,0.9,2.1)))*36);
+  text('AI 赋能教育',0,0,`900 116px ${SERIF}`,'#ffffff','center',34,a1);
+  x.restore();
+  const a2=fade(lt,1.9,2.5);
+  if(a2>0){const w2=340*eo(fade(lt,1.9,2.5));hline(W/2-w2,W/2+w2,392,AMBER,2,a2);}
+  text('未来，已来',W/2,452,`34px ${SANS}`,'rgba(235,242,255,0.95)','center',10,fade(lt,2.3,3.1));
+  text('把 AI 带进课堂 · 与学生一起探索未来',W/2,560,`18px ${MONO}`,'rgba(150,175,215,0.6)','center',10,fade(lt,2.8,3.4));
+  const fo=fade(lt,5.2,6.0);
+  if(fo>0){x.fillStyle=`rgba(0,0,0,${fo.toFixed(3)})`;x.fillRect(0,0,W,H);}
+}
+
+/* ================= 主时间轴：8×7.5s ================= */
+function drawFrame(t){
+  x.clearRect(0,0,W,H);
+  if(t<1.5)warp(t/1.5,'1950');
+  else if(t<7.5)sceneTuring(t-1.5);
+  else if(t<9)warp((t-7.5)/1.5,'1956');
+  else if(t<15)sceneDartmouth(t-9);
+  else if(t<16.5)warp((t-15)/1.5,'1974·1987',120);
+  else if(t<22.5)sceneWinter(t-16.5);
+  else if(t<24)warp((t-22.5)/1.5,'1997');
+  else if(t<30)sceneChess(t-24);
+  else if(t<31.5)warp((t-30)/1.5,'2012');
+  else if(t<37.5)sceneCNN(t-31.5);
+  else if(t<39)warp((t-37.5)/1.5,'2016');
+  else if(t<45)sceneGo(t-39);
+  else if(t<46.5)warp((t-45)/1.5,'2022');
+  else if(t<52.5)sceneChat(t-46.5);
+  else if(t<54)warp((t-52.5)/1.5,'今天');
+  else sceneToday(t-54);
+}
+window.__draw=drawFrame;
+drawFrame(0);
+</script>
+</body></html>
