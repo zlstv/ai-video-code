@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>矩阵开场</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#050505;font-family:system-ui,sans-serif;color:#fff}
+#c{display:block;width:100vw;height:100vh}
+#hud{position:fixed;top:20px;left:20px;font-family:monospace;font-size:11px;letter-spacing:0.05em;opacity:0.7;pointer-events:none;line-height:1.6}
+#subtitle{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);font-size:28px;letter-spacing:0.2em;opacity:0;transition:opacity 0.6s;pointer-events:none;white-space:nowrap}
+#flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity 0.4s}
+#endCard{display:none;position:fixed;inset:0;background:rgba(5,5,5,0.92);align-items:center;justify-content:center;flex-direction:column;gap:24px}
+#endCard.show{display:flex}
+.btn{padding:14px 32px;background:#38BDF8;color:#050505;border:none;border-radius:999px;font-size:16px;font-weight:600;cursor:pointer;transition:transform 0.2s,background 0.2s}
+.btn:hover{transform:scale(1.05);background:#60c9f9}
+</style>
+</head>
+<body>
+<!--THREE_INLINE-->
+<canvas id="c"></canvas>
+<div id="hud">
+<div id="sceneLabel">SCENE 01 · NEURAL</div>
+<div id="timer">T+00.0S</div>
+</div>
+<div id="subtitle"></div>
+<div id="flash"></div>
+<div id="endCard">
+<button class="btn" onclick="location.href='#blog'">进入博客</button>
+<button class="btn" onclick="window.__doReplay()">再看一遍</button>
+</div>
+
+<script>
+/*SAMPLERS*/
+
+const N=45000;
+const TAU=Math.PI*2;
+let seed=12345;
+function mulberry32(){let t=seed+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}
+const U={
+  rnd:mulberry32,
+  TAU,
+  lerp:(a,b,t)=>a+(b-a)*t,
+  ease:t=>t<0.5?4*t*t*t:(t-1)*(2*t-2)*(2*t-2)+1,
+  textCache:{},
+  sampleText(text,opt={}){
+    const key=text;
+    if(this.textCache[key])return this.textCache[key];
+    const w=opt.w||1400,h=opt.h||520,fontPx=opt.fontPx||340,worldW=opt.worldW||26,step=opt.step||4;
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+    const ctx=cv.getContext('2d');
+    ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
+    ctx.fillStyle='#fff';
+    ctx.font=`900 ${fontPx}px "Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif`;
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(text,w/2,h/2);
+    const img=ctx.getImageData(0,0,w,h);
+    const pts=[];
+    for(let y=0;y<h;y+=step){
+      for(let x=0;x<w;x+=step){
+        const a=img.data[(y*w+x)*4+3];
+        if(a>128){
+          const wx=(x/w-0.5)*worldW;
+          const wy=-(y/h-0.5)*(worldW*h/w);
+          const wz=(this.rnd()-0.5)*1.4;
+          pts.push(wx,wy,wz);
+        }
+      }
+    }
+    const arr=new Float32Array(pts);
+    this.textCache[key]=arr;
+    return arr;
+  }
+};
+
+const renderer=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setClearColor(0x050505);
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x050505,0.022);
+
+let W=window.innerWidth,H=window.innerHeight;
+const camera=new THREE.PerspectiveCamera(58,W/H,0.1,300);
+
+function makePointTexture(){
+  const sz=64,cv=document.createElement('canvas');cv.width=sz;cv.height=sz;
+  const ctx=cv.getContext('2d');
+  const grad=ctx.createRadialGradient(sz/2,sz/2,0,sz/2,sz/2,sz/2);
+  grad.addColorStop(0,'rgba(255,255,255,1)');
+  grad.addColorStop(0.4,'rgba(255,255,255,0.6)');
+  grad.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=grad;ctx.fillRect(0,0,sz,sz);
+  return new THREE.CanvasTexture(cv);
+}
+
+const geom=new THREE.BufferGeometry();
+const pos=new Float32Array(N*3),col=new Float32Array(N*3);
+geom.setAttribute('position',new THREE.BufferAttribute(pos,3));
+geom.setAttribute('color',new THREE.BufferAttribute(col,3));
+const mat=new THREE.PointsMaterial({
+  size:2.2,sizeAttenuation:true,vertexColors:true,
+  blending:THREE.AdditiveBlending,depthWrite:false,transparent:true,opacity:0.95,
+  map:makePointTexture()
+});
+const points=new THREE.Points(geom,mat);
+scene.add(points);
+
+const particles=[];
+for(let i=0;i<N;i++){
+  particles.push({
+    sx:0,sy:0,sz:0,
+    tx:0,ty:0,tz:0,
+    delay:0,dur:0,
+    cr:0.9,cg:0.9,cb:0.95,
+    tcr:0.9,tcg:0.9,tcb:0.95,
+    amber:false,
+    seedX:U.rnd(),seedY:U.rnd(),seedZ:U.rnd()
+  });
+}
+
+function setTargets(name,instant=false){
+  seed=54321;
+  for(let i=0;i<N;i++){
+    const p=particles[i];
+    p.sx=pos[i*3];p.sy=pos[i*3+1];p.sz=pos[i*3+2];
+    const res=SAMPLERS[name](i,N,U);
+    p.amber=false;
+    if(res===null){
+      const r=34+U.rnd()*26;
+      const theta=U.rnd()*TAU,phi=Math.acos(2*U.rnd()-1);
+      p.tx=r*Math.sin(phi)*Math.cos(theta);
+      p.ty=r*Math.sin(phi)*Math.sin(theta);
+      p.tz=r*Math.cos(phi);
+      p.tcr=0.15+U.rnd()*0.1;p.tcg=0.15+U.rnd()*0.1;p.tcb=0.2+U.rnd()*0.15;
+    }else{
+      p.tx=res[0];p.ty=res[1];p.tz=res[2];
+      if(res[3]){
+        p.amber=true;
+        p.tcr=1.0;p.tcg=0.62;p.tcb=0.15;
+      }else{
+        p.tcr=0.82+U.rnd()*0.13;p.tcg=0.85+U.rnd()*0.1;p.tcb=0.95+U.rnd()*0.05;
+      }
+    }
+    if(instant){
+      p.delay=0;p.dur=0;
+      pos[i*3]=p.tx;pos[i*3+1]=p.ty;pos[i*3+2]=p.tz;
+      col[i*3]=p.tcr;col[i*3+1]=p.tcg;col[i*3+2]=p.tcb;
+      p.cr=p.tcr;p.cg=p.tcg;p.cb=p.tcb;
+    }else{
+      p.delay=U.rnd()*0.9;
+      p.dur=1.1+U.rnd()*0.9;
+    }
+  }
+  if(instant){
+    geom.attributes.position.needsUpdate=true;
+    geom.attributes.color.needsUpdate=true;
+  }
+}
+
+const scenes=[
+  {t0:0,t1:6,sub:'什么是 AI？',sampler:'neural',label:'NEURAL',
+   camFrom:new THREE.Vector3(0,2,30),camTo:new THREE.Vector3(0,1,28),
+   lookFrom:new THREE.Vector3(0,0,0),lookTo:new THREE.Vector3(0,0,0)},
+  {t0:6,t1:12,sub:'AI 赋能教育',sampler:'text_edu',label:'EDU',
+   camFrom:new THREE.Vector3(0,2,34),camTo:new THREE.Vector3(0,1,24),
+   lookFrom:new THREE.Vector3(0,0,0),lookTo:new THREE.Vector3(0,0,0)},
+  {t0:12,t1:18,sub:'AI 创客 · 动手创造',sampler:'gear',label:'MAKER',
+   camFrom:new THREE.Vector3(18,8,18),camTo:new THREE.Vector3(-18,6,18),
+   lookFrom:new THREE.Vector3(0,0,0),lookTo:new THREE.Vector3(0,0,0)},
+  {t0:18,t1:24,sub:'未来的 AI 智能体',sampler:'text_agent',label:'AGENTS',
+   camFrom:new THREE.Vector3(-25,3,5),camTo:new THREE.Vector3(25,2,5),
+   lookFrom:new THREE.Vector3(0,0,0),lookTo:new THREE.Vector3(0,0,0)},
+  {t0:24,t1:30,sub:'知识库 · 有问即答',sampler:'cube',label:'KNOWLEDGE',
+   camFrom:new THREE.Vector3(22,10,22),camTo:new THREE.Vector3(-22,8,22),
+   lookFrom:new THREE.Vector3(0,0,0),lookTo:new THREE.Vector3(0,0,0)},
+  {t0:30,t1:35,sub:'连接知识',sampler:'graph',label:'GRAPH',
+   camFrom:new THREE.Vector3(0,4,28),camTo:new THREE.Vector3(0,3,38),
+   lookFrom:new THREE.Vector3(0,0,0),lookTo:new THREE.Vector3(0,0,0)},
+  {t0:35,t1:40,sub:'',sampler:'text_tv',label:'IDENTITY',
+   camFrom:new THREE.Vector3(0,1,26),camTo:new THREE.Vector3(0,3,26),
+   lookFrom:new THREE.Vector3(0,0,0),lookTo:new THREE.Vector3(0,0,0)}
+];
+
+let curSceneIdx=-1,sceneStartT=0,punchT=-999;
+
+function switchScene(idx){
+  curSceneIdx=idx;
+  sceneStartT=window.__t;
+  punchT=window.__t;
+  setTargets(scenes[idx].sampler);
+  document.getElementById('flash').style.opacity='0.25';
+  setTimeout(()=>document.getElementById('flash').style.opacity='0',10);
+  const sc=scenes[idx];
+  document.getElementById('sceneLabel').innerText=`SCENE ${String(idx+1).padStart(2,'0')} · ${sc.label}`;
+  const subEl=document.getElementById('subtitle');
+  if(sc.sub){
+    subEl.innerText=sc.sub;
+    setTimeout(()=>subEl.style.opacity='1',100);
+  }else{
+    subEl.style.opacity='0';
+  }
+}
+
+const T0=parseFloat(new URLSearchParams(location.search).get('t')||'0');
+const startMs=performance.now();
+let replayShift=0;
+window.__t=T0;
+window.__doReplay=function(){
+  replayShift=performance.now()-startMs;
+  curSceneIdx=-1;
+  document.getElementById('endCard').classList.remove('show');
+};
+window.__onFirstGesture=[];
+
+function updateParticles(sceneT){
+  for(let i=0;i<N;i++){
+    const p=particles[i];
+    const local=sceneT-p.delay;
+    const k=Math.max(0,Math.min(1,local/p.dur));
+    const e=U.ease(k);
+    const wave=1.6*Math.sin(k*Math.PI);
+    pos[i*3]=U.lerp(p.sx,p.tx,e)+(p.seedX-0.5)*wave;
+    pos[i*3+1]=U.lerp(p.sy,p.ty,e)+(p.seedY-0.5)*wave;
+    pos[i*3+2]=U.lerp(p.sz,p.tz,e)+(p.seedZ-0.5)*wave;
+    col[i*3]=U.lerp(p.cr,p.tcr,k);
+    col[i*3+1]=U.lerp(p.cg,p.tcg,k);
+    col[i*3+2]=U.lerp(p.cb,p.tcb,k);
+  }
+  geom.attributes.position.needsUpdate=true;
+  geom.attributes.color.needsUpdate=true;
+}
+
+function tick(now){
+  requestAnimationFrame(tick);
+  window.__t=Math.min(40,T0+(now-startMs-replayShift)/1000);
+  const t=window.__t;
+  document.getElementById('timer').innerText=`T+${t.toFixed(1)}S`;
+
+  let nextIdx=-1;
+  for(let i=0;i<scenes.length;i++){
+    if(t>=scenes[i].t0&&t<scenes[i].t1){nextIdx=i;break;}
+  }
+  if(nextIdx!==-1&&nextIdx!==curSceneIdx){
+    switchScene(nextIdx);
+  }
+  if(curSceneIdx===-1&&t<scenes[0].t1){
+    switchScene(0);
+    setTargets(scenes[0].sampler,true);
+  }
+
+  const sceneT=t-sceneStartT;
+  updateParticles(sceneT);
+
+  if(curSceneIdx!==-1){
+    const sc=scenes[curSceneIdx];
+    const dur=sc.t1-sc.t0;
+    const localK=Math.min(1,sceneT/dur);
+    const punch=(t-punchT<0.6)?Math.sin((t-punchT)/0.6*Math.PI)*0.15:0;
+    const camX=U.lerp(sc.camFrom.x,sc.camTo.x,localK);
+    const camY=U.lerp(sc.camFrom.y,sc.camTo.y,localK);
+    const camZ=U.lerp(sc.camFrom.z,sc.camTo.z,localK);
+    const idle=Math.sin(t*0.3)*0.4;
+    camera.position.set(camX+idle,camY,camZ*(1-punch));
+    const lx=U.lerp(sc.lookFrom.x,sc.lookTo.x,localK);
+    const ly=U.lerp(sc.lookFrom.y,sc.lookTo.y,localK);
+    const lz=U.lerp(sc.lookFrom.z,sc.lookTo.z,localK);
+    camera.lookAt(lx,ly,lz);
+  }else if(t>=40){
+    for(let i=0;i<N;i++){
+      const breath=Math.sin(t*1.5+i*0.01)*0.3;
+      pos[i*3+1]+=breath*0.02;
+    }
+    geom.attributes.position.needsUpdate=true;
+  }
+
+  renderer.render(scene,camera);
+}
+
+function onResize(){
+  W=window.innerWidth;H=window.innerHeight;
+  camera.aspect=W/H;camera.updateProjectionMatrix();
+  renderer.setSize(W,H);
+}
+window.addEventListener('resize',onResize);
+onResize();
+
+setInterval(()=>{
+  if(window.__t>=36)document.getElementById('endCard').classList.add('show');
+},500);
+
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
